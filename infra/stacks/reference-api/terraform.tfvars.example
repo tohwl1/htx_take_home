@@ -1,0 +1,7 @@
+# Documentation placeholders; replace with resources from your existing EKS/VPN environment.
+region                 = "ap-southeast-1"
+environment            = "eks"
+vpc_id                 = "vpc-0123456789abcdef0"
+node_security_group_id = "sg-0123456789abcdef0"
+vpc_cidr               = "10.20.0.0/16"
+on_premise_cidr         = "10.10.0.0/16"

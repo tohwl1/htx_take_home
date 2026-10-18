@@ -1,0 +1,11 @@
+# Local loopback-only HTTP development. In-cluster API uses TLS.
+services:
+  api:
+    build: .
+    command: [uvicorn, "app.main:app", --host, "0.0.0.0", --port, "8000", --no-access-log]
+    environment:
+      API_TOKEN: ${API_TOKEN:?Set API_TOKEN in your environment or local .env file}
+    ports: ["127.0.0.1:8000:8000"]
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]

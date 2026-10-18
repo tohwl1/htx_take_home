@@ -1,0 +1,6 @@
+apiVersion: v2
+name: reference-api
+description: Hybrid reference API for existing EKS with shared bearer-token authentication
+type: application
+version: 0.1.0
+appVersion: "1.0.0"

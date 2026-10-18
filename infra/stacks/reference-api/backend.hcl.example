@@ -1,0 +1,8 @@
+# Optional overrides for backend.tf's dummy existing S3 store.
+# Copy to ignored backend.hcl and replace before remote terraform init.
+bucket       = "hce-terraform-state-000000000000-ap-southeast-1"
+key          = "hce/eks/api-boundary.tfstate"
+region       = "ap-southeast-1"
+encrypt      = true
+use_lockfile = true
+# kms_key_id = "arn:aws:kms:ap-southeast-1:ACCOUNT:key/KEY"

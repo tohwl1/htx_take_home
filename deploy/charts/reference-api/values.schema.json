@@ -1,0 +1,83 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "required": ["image", "replicas", "auth", "tls", "ingress", "telemetry", "resources"],
+  "properties": {
+    "image": {
+      "type": "object",
+      "required": ["repository", "digest"],
+      "properties": {
+        "repository": {"type": "string", "minLength": 1},
+        "digest": {"type": "string", "pattern": "^sha256:[a-f0-9]{64}$"}
+      }
+    },
+    "imagePullSecrets": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["name"],
+        "properties": {"name": {"type": "string", "minLength": 1}}
+      }
+    },
+    "replicas": {"type": "integer", "minimum": 2},
+    "auth": {
+      "type": "object",
+      "required": ["existingSecret", "tokenKey"],
+      "properties": {
+        "existingSecret": {"type": "string", "minLength": 1},
+        "tokenKey": {"type": "string", "minLength": 1}
+      }
+    },
+    "tls": {
+      "type": "object",
+      "required": ["existingSecret"],
+      "properties": {"existingSecret": {"type": "string", "minLength": 1}}
+    },
+    "resources": {
+      "type": "object",
+      "required": ["requests", "limits"],
+      "properties": {
+        "requests": {"$ref": "#/definitions/resourceQuantities"},
+        "limits": {"$ref": "#/definitions/resourceQuantities"}
+      }
+    },
+    "telemetry": {
+      "type": "object",
+      "required": ["endpoint", "namespace", "port", "caSecret"],
+      "properties": {
+        "endpoint": {"type": "string", "pattern": "^https://[^/]+/?$"},
+        "namespace": {"type": "string", "minLength": 1},
+        "port": {"type": "integer", "minimum": 1, "maximum": 65535},
+        "caSecret": {"type": "string", "minLength": 1}
+      }
+    },
+    "ingress": {
+      "type": "object",
+      "required": ["enabled", "vpcCidr"],
+      "properties": {
+        "enabled": {"type": "boolean"},
+        "vpcCidr": {"type": "string", "minLength": 1}
+      },
+      "if": {"properties": {"enabled": {"const": true}}},
+      "then": {
+        "required": ["host", "certificateArn", "securityGroupId", "subnetIds"],
+        "properties": {
+          "host": {"type": "string", "minLength": 1},
+          "certificateArn": {"type": "string", "minLength": 1},
+          "securityGroupId": {"type": "string", "pattern": "^sg-[a-f0-9]+$"},
+          "subnetIds": {"type": "string", "pattern": "^subnet-[a-f0-9]+(,subnet-[a-f0-9]+)+$"}
+        }
+      }
+    }
+  },
+  "definitions": {
+    "resourceQuantities": {
+      "type": "object",
+      "required": ["cpu", "memory"],
+      "properties": {
+        "cpu": {"type": ["string", "number"], "minLength": 1, "exclusiveMinimum": 0},
+        "memory": {"type": ["string", "number"], "minLength": 1, "exclusiveMinimum": 0}
+      }
+    }
+  }
+}

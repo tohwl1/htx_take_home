@@ -1,0 +1,173 @@
+name: Validate, plan and apply Terraform
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# Queue runs on the same ref so deployments are never interrupted or overlap.
+concurrency:
+  group: pipeline-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  TF_IN_AUTOMATION: "true"
+  AWS_REGION: ap-southeast-1
+
+jobs:
+  validate:
+    name: Test and check configuration
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Check out code and commit history
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies and run tests
+        run: |
+          pip install -r requirements-dev.txt
+          pytest --junitxml=reports/tests.xml
+
+      - name: Set up Terraform
+        uses: hashicorp/setup-terraform@b9cd54a3c349d3f38e8881555d616ced269862dd # v3
+        with:
+          terraform_version: "1.13.5"
+          terraform_wrapper: false
+
+      - name: Check Terraform formatting and configuration
+        run: |
+          terraform fmt -check -recursive infra
+          terraform -chdir=infra/stacks/reference-api init -backend=false -lockfile=readonly
+          terraform -chdir=infra/stacks/reference-api validate
+
+      - name: Scan Terraform security with Checkov
+        run: |
+          python -m venv .checkov-venv
+          .checkov-venv/bin/pip install checkov==3.2.495
+          .checkov-venv/bin/checkov -d infra --framework terraform --compact --skip-download
+
+      - name: Assess configuration risk before planning
+        env:
+          PR_BASE: ${{ github.event.pull_request.base.sha }}
+          PUSH_BASE: ${{ github.event.before }}
+        run: |
+          BASE="$PR_BASE"
+          if [ -z "$BASE" ]; then BASE="$PUSH_BASE"; fi
+          if [ -z "$BASE" ]; then BASE=$(git rev-parse --verify HEAD^ 2>/dev/null || true); fi
+          # For a first commit or unavailable baseline, assess all committed configuration.
+          if [ -z "$BASE" ] || ! git cat-file -e "$BASE^{commit}" 2>/dev/null; then
+            BASE=$(git hash-object -w -t tree /dev/null)
+          fi
+          python tools/risk_detector.py --base "$BASE" --head HEAD
+
+      - name: Upload test and risk reports
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: validation-${{ github.sha }}
+          path: reports/
+          retention-days: 7
+
+  plan:
+    name: Create Terraform plan
+    needs: validate
+    # Automatic runs only validate. Deployment is explicitly started on main.
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && vars.DEPLOY_AWS == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      TF_VAR_vpc_id: ${{ vars.VPC_ID }}
+      TF_VAR_node_security_group_id: ${{ vars.NODE_SECURITY_GROUP_ID }}
+      TF_VAR_vpc_cidr: ${{ vars.VPC_CIDR }}
+      TF_VAR_on_premise_cidr: ${{ vars.ON_PREMISE_CIDR }}
+      STATE_BUCKET: ${{ vars.TF_STATE_BUCKET }}
+    steps:
+      - name: Check out code
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Set up Terraform
+        uses: hashicorp/setup-terraform@b9cd54a3c349d3f38e8881555d616ced269862dd # v3
+        with:
+          terraform_version: "1.13.5"
+          terraform_wrapper: false
+
+      - name: Authenticate to AWS with OIDC
+        uses: aws-actions/configure-aws-credentials@7474bc4690e29a8392af63c5b98e7449536d5c3a # v4
+        with:
+          role-to-assume: ${{ vars.AWS_PLAN_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Initialize remote state
+        run: terraform -chdir=infra/stacks/reference-api init -input=false -lockfile=readonly -backend-config="bucket=$STATE_BUCKET" -backend-config="key=hce/eks/api-boundary.tfstate" -backend-config="region=$AWS_REGION" -backend-config="encrypt=true" -backend-config="use_lockfile=true"
+
+      - name: Save the plan and readable report
+        run: |
+          mkdir -p reports
+          terraform -chdir=infra/stacks/reference-api plan -input=false -out=reviewed.tfplan
+          terraform -chdir=infra/stacks/reference-api show -no-color reviewed.tfplan > reports/plan.txt
+
+      - name: Upload plan for review and apply
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: terraform-plan-${{ github.sha }}
+          path: |
+            infra/stacks/reference-api/reviewed.tfplan
+            reports/plan.txt
+          retention-days: 1
+          if-no-files-found: error
+
+  apply:
+    name: Apply approved Terraform plan
+    needs: plan
+    # Configure required reviewers for this environment in GitHub settings.
+    environment: aws-eks
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      STATE_BUCKET: ${{ vars.TF_STATE_BUCKET }}
+    steps:
+      - name: Check out the planned commit
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ github.sha }}
+
+      - name: Set up Terraform
+        uses: hashicorp/setup-terraform@b9cd54a3c349d3f38e8881555d616ced269862dd # v3
+        with:
+          terraform_version: "1.13.5"
+          terraform_wrapper: false
+
+      - name: Download the reviewed plan from this run
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: terraform-plan-${{ github.sha }}
+          path: .
+
+      - name: Authenticate to AWS with OIDC
+        uses: aws-actions/configure-aws-credentials@7474bc4690e29a8392af63c5b98e7449536d5c3a # v4
+        with:
+          role-to-assume: ${{ vars.AWS_APPLY_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Initialize remote state
+        run: terraform -chdir=infra/stacks/reference-api init -input=false -lockfile=readonly -backend-config="bucket=$STATE_BUCKET" -backend-config="key=hce/eks/api-boundary.tfstate" -backend-config="region=$AWS_REGION" -backend-config="encrypt=true" -backend-config="use_lockfile=true"
+
+      - name: Apply the saved plan
+        run: terraform -chdir=infra/stacks/reference-api apply -input=false reviewed.tfplan

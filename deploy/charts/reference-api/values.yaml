@@ -1,0 +1,30 @@
+# Existing EKS deployment example. All example.org/zero-ID values below are
+# deliberately dummy inputs for rendering; replace them before any deployment.
+# Provision this Secret separately; never put the token itself in Helm values.
+auth:
+  existingSecret: reference-api-token
+  tokenKey: API_TOKEN
+# Provision a kubernetes.io/tls Secret with tls.crt and tls.key separately.
+tls:
+  existingSecret: reference-api-tls
+image:
+  repository: ghcr.io/example-org/hce-reference-api
+  digest: sha256:0000000000000000000000000000000000000000000000000000000000000000
+imagePullSecrets: []
+replicas: 3
+ingress:
+  enabled: true
+  host: api.internal.example.org
+  certificateArn: arn:aws:acm:ap-southeast-1:000000000000:certificate/00000000-0000-0000-0000-000000000000
+  securityGroupId: sg-00000000000000001
+  subnetIds: subnet-00000000000000001,subnet-00000000000000002
+  vpcCidr: 10.20.0.0/16
+telemetry:
+  endpoint: https://otel-collector.monitoring.svc.cluster.local:4318
+  namespace: monitoring
+  port: 4318
+  # Secret in the API namespace with the Collector's trusted CA bundle as ca.crt.
+  caSecret: reference-api-telemetry-ca
+resources:
+  requests: {cpu: 100m, memory: 128Mi}
+  limits: {cpu: 500m, memory: 256Mi}

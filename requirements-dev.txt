@@ -1,0 +1,5 @@
+# Runtime plus direct test and risk-detector dependencies.
+-r requirements.txt
+httpx==0.28.1
+pytest==9.1.1
+python-hcl2==8.1.4

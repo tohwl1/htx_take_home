@@ -1,0 +1,36 @@
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny
+spec:
+  podSelector: {}
+  policyTypes: [Ingress, Egress]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: dns
+spec:
+  podSelector: {}
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - namespaceSelector: {matchLabels: {kubernetes.io/metadata.name: kube-system}}
+          podSelector: {matchLabels: {k8s-app: kube-dns}}
+      ports: [{protocol: UDP, port: 53}, {protocol: TCP, port: 53}]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: api
+spec:
+  podSelector: {matchLabels: {app: reference-api}}
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - from: [{ipBlock: {cidr: {{ .Values.ingress.vpcCidr | quote }}}}]
+      ports: [{port: 8443, protocol: TCP}]
+    - from: [{namespaceSelector: {matchLabels: {kubernetes.io/metadata.name: {{ .Values.telemetry.namespace | quote }}}}}]
+      ports: [{port: 8443, protocol: TCP}]
+  egress:
+    - to: [{namespaceSelector: {matchLabels: {kubernetes.io/metadata.name: {{ .Values.telemetry.namespace | quote }}}}}]
+      ports: [{port: {{ .Values.telemetry.port }}, protocol: TCP}]

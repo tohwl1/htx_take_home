@@ -1,0 +1,76 @@
+{{- $digest := required "Set image.digest to the published image SHA-256 digest" .Values.image.digest }}
+{{- if not (regexMatch "^sha256:[a-f0-9]{64}$" $digest) }}
+{{- fail "image.digest must be sha256 followed by 64 lowercase hexadecimal characters" }}
+{{- end }}
+{{- $image := printf "%s@%s" (required "Set image.repository" .Values.image.repository) $digest }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: reference-api
+spec:
+  replicas: {{ .Values.replicas }}
+  revisionHistoryLimit: 3
+  minReadySeconds: 10
+  progressDeadlineSeconds: 300
+  strategy:
+    type: RollingUpdate
+    rollingUpdate: {maxSurge: 1, maxUnavailable: 0}
+  selector:
+    matchLabels: {app: reference-api}
+  template:
+    metadata:
+      labels: {app: reference-api}
+      annotations:
+        checksum/values: {{ toJson .Values | sha256sum }}
+    spec:
+      serviceAccountName: reference-api
+      automountServiceAccountToken: false
+      terminationGracePeriodSeconds: 60
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets: {{ toYaml . | nindent 8 }}
+      {{- end }}
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: topology.kubernetes.io/zone
+          whenUnsatisfiable: DoNotSchedule
+          labelSelector: {matchLabels: {app: reference-api}}
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: DoNotSchedule
+          labelSelector: {matchLabels: {app: reference-api}}
+      securityContext: {runAsNonRoot: true, runAsUser: 10001, runAsGroup: 10001, fsGroup: 10001, seccompProfile: {type: RuntimeDefault}}
+      containers:
+        - name: api
+          image: {{ $image | quote }}
+          imagePullPolicy: IfNotPresent
+          ports: [{name: https, containerPort: 8443}]
+          env:
+            - name: API_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ required "Set auth.existingSecret to a separately provisioned token Secret" .Values.auth.existingSecret | quote }}
+                  key: {{ required "Set auth.tokenKey" .Values.auth.tokenKey | quote }}
+            - {name: OTEL_EXPORTER_OTLP_ENDPOINT, value: {{ .Values.telemetry.endpoint | quote }}}
+            - {name: OTEL_EXPORTER_OTLP_CERTIFICATE, value: /telemetry-ca/ca.crt}
+          securityContext: {allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: {drop: [ALL]}}
+          resources: {{ toYaml .Values.resources | nindent 12 }}
+          startupProbe: {httpGet: {path: /livez, port: https, scheme: HTTPS}, periodSeconds: 2, failureThreshold: 30, timeoutSeconds: 2}
+          readinessProbe: {httpGet: {path: /readyz, port: https, scheme: HTTPS}, periodSeconds: 5, failureThreshold: 2, timeoutSeconds: 2}
+          livenessProbe: {httpGet: {path: /livez, port: https, scheme: HTTPS}, periodSeconds: 10, failureThreshold: 3, timeoutSeconds: 2}
+          lifecycle:
+            preStop:
+              exec:
+                command: [python, -c, "import time; time.sleep(10)"]
+          volumeMounts:
+            - {name: tls, mountPath: /tls, readOnly: true}
+            - {name: telemetry-ca, mountPath: /telemetry-ca, readOnly: true}
+      volumes:
+        - name: tls
+          secret:
+            secretName: {{ required "Set tls.existingSecret to a separately provisioned TLS Secret" .Values.tls.existingSecret | quote }}
+            defaultMode: 0440
+        - name: telemetry-ca
+          secret:
+            secretName: {{ required "Set telemetry.caSecret to the Collector CA Secret" .Values.telemetry.caSecret | quote }}
+            items:
+              - {key: ca.crt, path: ca.crt}

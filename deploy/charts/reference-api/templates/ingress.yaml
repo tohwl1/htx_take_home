@@ -1,0 +1,28 @@
+{{- if .Values.ingress.enabled }}
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: reference-api
+  annotations:
+    alb.ingress.kubernetes.io/scheme: internal
+    alb.ingress.kubernetes.io/target-type: ip
+    alb.ingress.kubernetes.io/listen-ports: '[{"HTTPS":443}]'
+    alb.ingress.kubernetes.io/certificate-arn: {{ required "Set ACM certificate ARN" .Values.ingress.certificateArn | quote }}
+    alb.ingress.kubernetes.io/security-groups: {{ required "Set Terraform ALB SG output" .Values.ingress.securityGroupId | quote }}
+    alb.ingress.kubernetes.io/subnets: {{ required "Set two private ALB subnet IDs" .Values.ingress.subnetIds | quote }}
+    alb.ingress.kubernetes.io/backend-protocol: HTTPS
+    alb.ingress.kubernetes.io/healthcheck-protocol: HTTPS
+    alb.ingress.kubernetes.io/healthcheck-path: /readyz
+    alb.ingress.kubernetes.io/target-group-attributes: deregistration_delay.timeout_seconds=30
+    alb.ingress.kubernetes.io/ssl-policy: ELBSecurityPolicy-TLS13-1-2-2021-06
+spec:
+  ingressClassName: alb
+  rules:
+    - host: {{ .Values.ingress.host | quote }}
+      http:
+        paths:
+          - path: /v1/reference/
+            pathType: Prefix
+            backend:
+              service: {name: reference-api, port: {number: 8443}}
+{{- end }}

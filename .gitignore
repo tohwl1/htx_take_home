@@ -1,0 +1,38 @@
+# Python environments and caches
+.venv/
+.checkov-venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# Terraform local data and inputs; keep .terraform.lock.hcl and *.example
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfplan
+.terraform.tfstate.lock.info
+*.tfvars
+*.tfvars.json
+*.backend.hcl
+backend.hcl
+
+# Local environment files and credential material
+.env
+.env.*
+!.env.example
+.aws/
+.kube/
+*.pem
+*.key
+*.crt
+*.p12
+*.pfx
+
+# Generated files and downloaded tools
+/tmp/
+/reports/
+/output/
+/tools/bin/
+*.log
+Thumbs.db
+Desktop.ini
