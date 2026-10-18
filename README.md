@@ -1,7 +1,7 @@
 # HCE hybrid cloud integration
 
 Interview assignment: a hybrid design for an on-premise application calling a
-cloud API and uploading nightly CSV files. See [assignment.pdf](assignment.pdf).
+cloud API and uploading nightly CSV files.
 The implemented slice is an API network boundary in Terraform, supported by a
 small FastAPI service, a CI/CD workflow and a configuration-risk detector.
 Batch processing is design-only; the assignment permits partial implementation.
