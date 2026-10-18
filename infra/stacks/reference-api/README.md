@@ -12,6 +12,9 @@ terraform -chdir=infra/stacks/reference-api validate
 ```
 
 Provider installation still needs registry access or a local cache.
+The committed lock file includes Windows and Linux provider checksums. After
+provider updates, refresh them with `terraform providers lock
+-platform=windows_amd64 -platform=linux_amd64` from this directory.
 For plan/apply, follow [infrastructure setup](../../README.md), replacing the
 example inputs and dummy S3 backend bucket. The state key is
 `hce/eks/api-boundary.tfstate`, with encryption and native locking enabled.
